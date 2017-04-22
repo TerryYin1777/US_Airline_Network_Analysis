@@ -45,5 +45,24 @@ airport_state = bind_rows(airport_o_state,airport_d_state)
 airport_state = airport_state %>% distinct(airport,state_name) %>% arrange(airport)
 ```
 
+### Airport Delay Rate
+```{r}
+Dep_Delay_Rate = airline1516 %>% mutate(have_depdelay =ifelse(DEP_DELAY_NEW>0,1,0) ) %>% select(ORIGIN,have_depdelay)
+Dep_Delay_Rate = Dep_Delay_Rate[complete.cases(Dep_Delay_Rate),]
+Dep_Delay_Rate = Dep_Delay_Rate %>% rename(airport = ORIGIN) %>% arrange(airport) %>% group_by(airport) %>% summarize(frequency = sum(have_depdelay)/n())
+```
 
+### Airport Delay Average time histogram
+```{r}
+Dep_top10 = airline1516 %>% select(ORIGIN, DEP_DELAY_NEW) %>% filter(DEP_DELAY_NEW>10) %>% rename(airport = ORIGIN) %>% group_by(airport) %>% summarise(avg_delay_time = mean(DEP_DELAY_NEW)) %>% top_n(10,avg_delay_time)
+Delay_top10_airport = Dep_top10[1]
+Delay_top10_airport_hist = airline1516 %>% select(ORIGIN,DEP_DELAY_NEW) %>% filter(ORIGIN %in% Delay_top10_airport$airport, DEP_DELAY_NEW>0)
+ggplot(Delay_top10_airport_hist,aes(x = ORIGIN, y = DEP_DELAY_NEW))+
+  geom_boxplot()
+```
+
+### Airport Delay Average time(Regard delay under 10 minutes as on time)
+```{r}
+Dep_Delay_Time = airline1516 %>% select(ORIGIN, DEP_DELAY_NEW) %>% filter(DEP_DELAY_NEW>10) %>% rename(airport = ORIGIN) %>% group_by(airport) %>% summarise(avg_delay_time = mean(DEP_DELAY_NEW))
+```
 
