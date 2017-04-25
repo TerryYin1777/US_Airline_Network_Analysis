@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r load packages}
 library("dplyr")
 library("ggplot2")
+library("igraph")
 ```
 
 ### Load data
@@ -21,38 +22,51 @@ load("airline1516.Rdata")
 load("airline_sample.Rdata")
 ```
 
-### Calculate daily volume of airports as an attribute of nodes
+### Nodes Attributes
+
+#### Calculate daily volume of airports as an attribute of nodes
 ```{r}
 airport_out = airline1516 %>% select(ORIGIN,FL_DATE) %>% group_by(ORIGIN,FL_DATE) %>% summarise(frequency = n()) %>% rename(airport = ORIGIN) %>% group_by(airport) %>% summarize(volume = mean(frequency))
 airport_in = airline1516 %>% select(DEST,FL_DATE) %>% group_by(DEST,FL_DATE) %>% summarise(frequency = n()) %>% rename(airport = DEST) %>% group_by(airport) %>% summarise(volume = mean(frequency))
-airport_volume = bind_rows(airport_in,airport_out) 
+airport_volume = rbind(airport_in,airport_out) 
 airport_volume = airport_volume%>% group_by(airport) %>% summarize(volume_in_out = sum(volume))
+airport_volume$airport = as.character(airport_volume$airport)
+airport_volume = airport_volume %>% arrange(airport)
 ```
 
-### Identify city of airports as an attribute of nodes
+
+#### Identify city of airports as an attribute of nodes
 ```{r}
 airport_o_city = airline1516 %>% select(ORIGIN,ORIGIN_CITY_NAME) %>% distinct(ORIGIN,ORIGIN_CITY_NAME) %>% rename(airport = ORIGIN,city_name = ORIGIN_CITY_NAME)
 airport_d_city = airline1516 %>% select(DEST,DEST_CITY_NAME) %>% distinct(DEST,DEST_CITY_NAME) %>% rename(airport = DEST,city_name = DEST_CITY_NAME)
-airport_city = bind_rows(airport_o_city,airport_d_city)
-airport_city = airport_city %>% distinct(airport,city_name) %>% arrange(airport)
+airport_city = rbind(airport_o_city,airport_d_city)
+airport_city = airport_city %>% distinct(airport,city_name)
+airport_city$airport = as.character(airport_city$airport)
+airport_city$city_name = as.character(airport_city$city_name)
+airport_city = airport_city %>% arrange(airport)
 ```
 
-### Identify state of airports as an attribute of nodes
+#### Identify state of airports as an attribute of nodes
 ```{r}
 airport_o_state = airline1516 %>% select(ORIGIN,ORIGIN_STATE_NM) %>% distinct(ORIGIN,ORIGIN_STATE_NM) %>% rename(airport = ORIGIN,state_name = ORIGIN_STATE_NM)
 airport_d_state = airline1516 %>% select(DEST,DEST_STATE_NM) %>% distinct(DEST,DEST_STATE_NM) %>% rename(airport = DEST,state_name = DEST_STATE_NM)
-airport_state = bind_rows(airport_o_state,airport_d_state)
-airport_state = airport_state %>% distinct(airport,state_name) %>% arrange(airport)
+airport_state = rbind(airport_o_state,airport_d_state)
+airport_state = airport_state %>% distinct(airport,state_name) 
+airport_state$airport = as.character(airport_state$airport)
+airport_state$state_name = as.character(airport_state$state_name)
+airport_state = airport_state %>% arrange(airport)
 ```
 
-### Airport Delay Rate
+#### Airport Delay Rate
 ```{r}
 Dep_Delay_Rate = airline1516 %>% mutate(have_depdelay =ifelse(DEP_DELAY_NEW>0,1,0) ) %>% select(ORIGIN,have_depdelay)
 Dep_Delay_Rate = Dep_Delay_Rate[complete.cases(Dep_Delay_Rate),]
 Dep_Delay_Rate = Dep_Delay_Rate %>% rename(airport = ORIGIN) %>% arrange(airport) %>% group_by(airport) %>% summarize(frequency = sum(have_depdelay)/n())
+Dep_Delay_Rate$airport = as.character(Dep_Delay_Rate$airport)
+Dep_Delay_Rate = Dep_Delay_Rate %>% arrange(airport)
 ```
 
-### Airport Delay Average time histogram
+#### Airport Delay Average time histogram
 ```{r}
 Dep_top10 = airline1516 %>% select(ORIGIN, DEP_DELAY_NEW) %>% filter(DEP_DELAY_NEW>10) %>% rename(airport = ORIGIN) %>% group_by(airport) %>% summarise(avg_delay_time = mean(DEP_DELAY_NEW)) %>% top_n(10,avg_delay_time)
 Delay_top10_airport = Dep_top10[1]
@@ -61,8 +75,57 @@ ggplot(Delay_top10_airport_hist,aes(x = ORIGIN, y = DEP_DELAY_NEW))+
   geom_boxplot()
 ```
 
-### Airport Delay Average time(Regard delay under 10 minutes as on time)
+
+#### Airport Delay Average time(Regard delay under 10 minutes as on time)
 ```{r}
-Dep_Delay_Time = airline1516 %>% select(ORIGIN, DEP_DELAY_NEW) %>% filter(DEP_DELAY_NEW>10) %>% rename(airport = ORIGIN) %>% group_by(airport) %>% summarise(avg_delay_time = mean(DEP_DELAY_NEW))
+Dep_Delay_Time = airline1516 %>% select(ORIGIN, DEP_DELAY_NEW) %>% filter(DEP_DELAY_NEW>0) %>% rename(airport = ORIGIN) %>% group_by(airport) %>% summarise(avg_delay_time = mean(DEP_DELAY_NEW))
+Dep_Delay_Time$airport = as.character(Dep_Delay_Time$airport)
+Dep_Delay_Time = Dep_Delay_Time %>% arrange(airport)
+```
+
+### Edge Attributes
+
+#### Distance
+```{r}
+Mean_Distance = airline1516 %>% select(ORIGIN,DEST,DISTANCE) %>% group_by(ORIGIN,DEST) %>% summarise(mean_distance = mean(DISTANCE))
+
+Mean_Distance$ORIGIN = as.character(Mean_Distance$ORIGIN)
+Mean_Distance$DEST = as.character(Mean_Distance$DEST)
+Mean_Distance = Mean_Distance %>% arrange(ORIGIN,DEST)
+```
+
+#### Airline daily  average frequency
+```{r}
+Airline_Frequency = airline1516 %>% select(ORIGIN,DEST,FL_DATE) %>% group_by(ORIGIN,DEST,FL_DATE) %>% summarize(frequency = n()) %>% group_by(ORIGIN,DEST) %>% summarise(daily_frequency = mean(frequency))
+Airline_Frequency$ORIGIN  = as.character(Airline_Frequency$ORIGIN)
+Airline_Frequency$DEST  = as.character(Airline_Frequency$DEST)
+Airline_Frequency = Airline_Frequency %>% arrange(ORIGIN,DEST)
+```
+
+
+
+
+### Core Network
+```{r}
+airline = Airline_Frequency[,1:2]
+airline_network = graph_from_data_frame(airline,directed = TRUE)
+```
+
+### Insert attributes into core network
+```{r}
+V(airline_network)$volume = airport_volume$volume_in_out
+V(airline_network)$city = airport_city$city_name
+V(airline_network)$state = airport_state$state_name
+V(airline_network)$delay_rate = Dep_Delay_Rate$frequency
+V(airline_network)$avg_delay_time = Dep_Delay_Time$avg_delay_time
+E(airline_network)$distance = Mean_Distance$mean_distance
+E(airline_network)$daily_frequency = Airline_Frequency$daily_frequency
+```
+
+### Save as GML file
+```{r}
+write_graph(airline_network,"airline_network.gml","gml")
+read_graph("airline_network.gml","gml")
+
 ```
 
