@@ -82,6 +82,36 @@ Dep_Delay_Time = airline1516 %>% select(ORIGIN, DEP_DELAY_NEW) %>% filter(DEP_DE
 Dep_Delay_Time$airport = as.character(Dep_Delay_Time$airport)
 Dep_Delay_Time = Dep_Delay_Time %>% arrange(airport)
 ```
+#### geographic information
+```{r}
+geo_airport = read.csv("geo_airport.csv")
+```
+
+#### airport carrier delay
+```{r}
+airport_carrier_delay = airline1516 %>% select(ORIGIN,FL_DATE,CARRIER,DEP_DELAY_NEW) %>% mutate(delay = ifelse(DEP_DELAY_NEW>0,1,0))
+airport_carrier_delay$delay[which(is.na(airport_carrier_delay$delay))] = 0
+airport_carrier_delay = airport_carrier_delay %>% group_by(ORIGIN,CARRIER) %>% summarize(rate = sum(delay)/n())
+airport_carrier_delay_max = airport_carrier_delay %>% group_by(ORIGIN) %>% mutate(high = max(rate))
+airport_carrier_delay_max = airport_carrier_delay_max %>% mutate(is_high = ifelse(rate == high, 1,NA)) %>% na.omit %>% select(ORIGIN,CARRIER,rate) %>% rename(high_carrier = CARRIER,high_rate = rate)
+airport_carrier_delay_max$ORIGIN = as.character(airport_carrier_delay_max$ORIGIN)
+airport_carrier_delay_max$high_carrier = as.character(airport_carrier_delay_max$high_carrier)
+airport_carrier_delay_max = arrange(airport_carrier_delay_max,ORIGIN)
+
+airport_carrier_delay_min = airport_carrier_delay %>% group_by(ORIGIN) %>% mutate(low = min(rate))
+airport_carrier_delay_min = airport_carrier_delay_min %>% mutate(is_low = ifelse(rate == low, 1,NA)) %>% na.omit %>% select(ORIGIN,CARRIER,rate) %>% rename(low_carrier = CARRIER,low_rate = rate)
+airport_carrier_delay_min$ORIGIN = as.character(airport_carrier_delay_min$ORIGIN)
+airport_carrier_delay_min$low_carrier = as.character(airport_carrier_delay_min$low_carrier)
+airport_carrier_delay_min = arrange(airport_carrier_delay_min,ORIGIN)
+
+airport_carrier_delay = full_join(airport_carrier_delay_max,airport_carrier_delay_min,by = "ORIGIN")
+```
+
+
+
+
+
+
 
 ### Edge Attributes
 
@@ -102,7 +132,62 @@ Airline_Frequency$DEST  = as.character(Airline_Frequency$DEST)
 Airline_Frequency = Airline_Frequency %>% arrange(ORIGIN,DEST)
 ```
 
+#### Airline delay rate
+```{r}
+Airline_delay_rate = airline1516 %>% mutate(have_depdelay =ifelse(DEP_DELAY_NEW>0,1,0) ) %>% select(ORIGIN,DEST,have_depdelay)
+Airline_delay_rate$have_depdelay[which(is.na(Airline_delay_rate$have_depdelay))] = 0
+Airline_delay_rate = Airline_delay_rate %>%  group_by(ORIGIN,DEST) %>% summarize(rate = sum(have_depdelay)/n())
+Airline_delay_rate$ORIGIN = as.character(Airline_delay_rate$ORIGIN)
+Airline_delay_rate$DEST = as.character(Airline_delay_rate$DEST)
+Airline_delay_rate = Airline_delay_rate %>% arrange(ORIGIN,DEST)
+```
 
+#### Airline delay average time
+```{r}
+Airline_delay_average_time = airline1516  %>% select(ORIGIN,DEST,DEP_DELAY_NEW) 
+Airline_delay_average_time = Airline_delay_average_time %>% filter(DEP_DELAY_NEW>0) %>%  group_by(ORIGIN,DEST) %>% summarize(delay_time = mean(DEP_DELAY_NEW))
+Airline_delay_average_time$ORIGIN = as.character(Airline_delay_average_time$ORIGIN)
+Airline_delay_average_time$DEST = as.character(Airline_delay_average_time$DEST)
+Airline_delay_average_time = Airline_delay_average_time %>% arrange(ORIGIN,DEST)
+airline_order = Airline_Frequency[,1:2]
+airline_order$delay_time = 0
+
+Airline_delay_average_time = rbind(Airline_delay_average_time,airline_order)
+Airline_delay_average_time = Airline_delay_average_time %>% group_by(ORIGIN,DEST) %>% summarise(delay = sum(delay_time))
+```
+
+#### Airline carrier delay rate
+```{r}
+airline_carrier_delay = airline1516 %>% select(ORIGIN,DEST,FL_DATE,CARRIER,DEP_DELAY_NEW) %>% mutate(delay = ifelse(DEP_DELAY_NEW>0,1,0))
+airline_carrier_delay$delay[which(is.na(airline_carrier_delay$delay))] = 0
+airline_carrier_delay = airline_carrier_delay %>% group_by(ORIGIN,DEST,CARRIER) %>% summarize(rate = sum(delay)/n())
+airline_carrier_delay_max = airline_carrier_delay %>% group_by(ORIGIN,DEST) %>% mutate(high = max(rate))
+airline_carrier_delay_max = airline_carrier_delay_max %>% mutate(is_high = ifelse(rate == high, 1,NA)) %>% na.omit %>% select(ORIGIN,DEST,CARRIER,rate) %>% rename(high_carrier = CARRIER,high_rate = rate) %>% group_by(ORIGIN,DEST) %>% summarise(high_rate = mean(high_rate),high_carrier = first(high_carrier))
+airline_carrier_delay_max$ORIGIN = as.character(airline_carrier_delay_max$ORIGIN)
+airline_carrier_delay_max$DEST = as.character(airline_carrier_delay_max$DEST)
+airline_carrier_delay_max$high_carrier = as.character(airline_carrier_delay_max$high_carrier)
+airline_carrier_delay_max = arrange(airline_carrier_delay_max,ORIGIN,DEST)
+
+airline_carrier_delay_min = airline_carrier_delay %>% group_by(ORIGIN,DEST) %>% mutate(low = min(rate))
+airline_carrier_delay_min = airline_carrier_delay_min %>% mutate(is_low = ifelse(rate == low, 1,NA)) %>% na.omit %>% select(ORIGIN,DEST,CARRIER,rate) %>% rename(low_carrier = CARRIER,low_rate = rate) %>% group_by(ORIGIN,DEST) %>% summarise(low_rate = mean(low_rate),low_carrier = first(low_carrier))
+airline_carrier_delay_min$ORIGIN = as.character(airline_carrier_delay_min$ORIGIN)
+airline_carrier_delay_min$DEST = as.character(airline_carrier_delay_min$DEST)
+airline_carrier_delay_min$low_carrier = as.character(airline_carrier_delay_min$low_carrier)
+airline_carrier_delay_min = arrange(airline_carrier_delay_min,ORIGIN,DEST)
+
+airline_carrier_delay = full_join(airline_carrier_delay_max,airline_carrier_delay_min,by = c("ORIGIN","DEST"))
+```
+
+#### airline carrier delay average time
+```{r}
+airline_carrier_delay_time_max = airline1516 %>% select(ORIGIN,DEST,CARRIER,DEP_DELAY_NEW) %>% filter(DEP_DELAY_NEW>0) %>% group_by(ORIGIN,DEST,CARRIER) %>% summarize(avg_time = mean(DEP_DELAY_NEW)) %>% group_by(ORIGIN,DEST) %>% mutate(high_time = max(avg_time)) %>% mutate(is_high = ifelse(avg_time == high_time,1,NA)) %>% na.omit() %>% select(ORIGIN,DEST,CARRIER,high_time) %>% rename(high_carrier = CARRIER) %>% group_by(ORIGIN,DEST) %>% summarise(high_time = mean(high_time),high_carrier = first(high_carrier))
+airline_carrier_delay_time = airline_carrier_delay[,1:2]
+airline_carrier_delay_time = left_join(airline_carrier_delay_time,airline_carrier_delay_time_max,by = c("ORIGIN","DEST"))
+
+
+airline_carrier_delay_time_min = airline1516 %>% select(ORIGIN,DEST,CARRIER,DEP_DELAY_NEW) %>% filter(DEP_DELAY_NEW>0) %>% group_by(ORIGIN,DEST,CARRIER) %>% summarize(avg_time = mean(DEP_DELAY_NEW)) %>% group_by(ORIGIN,DEST) %>% mutate(low_time = min(avg_time)) %>% mutate(is_low = ifelse(avg_time == low_time,1,NA)) %>% na.omit() %>% select(ORIGIN,DEST,CARRIER,low_time) %>% rename(low_carrier = CARRIER) %>% group_by(ORIGIN,DEST) %>% summarise(low_time = mean(low_time),low_carrier = first(low_carrier))
+airline_carrier_delay_time =left_join(airline_carrier_delay_time,airline_carrier_delay_time_min,by = c("ORIGIN","DEST"))
+```
 
 
 ### Core Network
@@ -118,14 +203,48 @@ V(airline_network)$city = airport_city$city_name
 V(airline_network)$state = airport_state$state_name
 V(airline_network)$delay_rate = Dep_Delay_Rate$frequency
 V(airline_network)$avg_delay_time = Dep_Delay_Time$avg_delay_time
+V(airline_network)$latitude = geo_airport$latitude
+V(airline_network)$longitude = geo_airport$longitude
+V(airline_network)$lat = geo_airport$latitude
+V(airline_network)$lng = geo_airport$longitude
+V(airline_network)$delay_carrier_high = airport_carrier_delay$high_carrier
+V(airline_network)$delay_carrier_high_rate = airport_carrier_delay$high_rate
+V(airline_network)$delay_carrier_low = airport_carrier_delay$low_carrier
+V(airline_network)$delay_carrier_low_rate = airport_carrier_delay$low_rate
 E(airline_network)$distance = Mean_Distance$mean_distance
 E(airline_network)$daily_frequency = Airline_Frequency$daily_frequency
+E(airline_network)$deley_rate = Airline_delay_rate$rate
+E(airline_network)$airline_avg_delay_time = Airline_delay_average_time$delay
+E(airline_network)$linedelay_ca_high = airline_carrier_delay$high_carrier
+E(airline_network)$linedelay_ca_high_rate = airline_carrier_delay$high_rate
+E(airline_network)$linedelay_ca_low = airline_carrier_delay$low_carrier
+E(airline_network)$linedelay_ca_low_rate = airline_carrier_delay$low_rate
+
+E(airline_network)$linedelaytime_ca_high = airline_carrier_delay_time$high_carrier
+E(airline_network)$linedelaytime_ca_high_time = airline_carrier_delay_time$high_time
+E(airline_network)$linedelaytime_ca_low = airline_carrier_delay_time$low_carrier
+E(airline_network)$linedelaytime_ca_low_time = airline_carrier_delay_time$low_time
 ```
 
 ### Save as GML file
 ```{r}
 write_graph(airline_network,"airline_network.gml","gml")
-read_graph("airline_network.gml","gml")
+airline_network = read_graph("airline_network.gml","gml")
+
+```
+```{r}
+write.csv(airport_volume,"list.csv")
+
+```
+
+### Hub analysis
+```{r}
+t = table(degree(airline_network))
+plot(t)
+
+```
+### delay analysis
+```{r}
 
 ```
 
