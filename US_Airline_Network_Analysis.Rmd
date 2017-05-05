@@ -187,7 +187,14 @@ airline_carrier_delay_time = left_join(airline_carrier_delay_time,airline_carrie
 
 airline_carrier_delay_time_min = airline1516 %>% select(ORIGIN,DEST,CARRIER,DEP_DELAY_NEW) %>% filter(DEP_DELAY_NEW>0) %>% group_by(ORIGIN,DEST,CARRIER) %>% summarize(avg_time = mean(DEP_DELAY_NEW)) %>% group_by(ORIGIN,DEST) %>% mutate(low_time = min(avg_time)) %>% mutate(is_low = ifelse(avg_time == low_time,1,NA)) %>% na.omit() %>% select(ORIGIN,DEST,CARRIER,low_time) %>% rename(low_carrier = CARRIER) %>% group_by(ORIGIN,DEST) %>% summarise(low_time = mean(low_time),low_carrier = first(low_carrier))
 airline_carrier_delay_time =left_join(airline_carrier_delay_time,airline_carrier_delay_time_min,by = c("ORIGIN","DEST"))
+airline_carrier_delay_time$high_carrier = as.character(airline_carrier_delay_time$high_carrier)
+airline_carrier_delay_time$low_carrier = as.character(airline_carrier_delay_time$low_carrier)
+airline_carrier_delay_time$high_time[is.na(airline_carrier_delay_time$high_time)] = 0
+airline_carrier_delay_time$low_time[is.na(airline_carrier_delay_time$low_time)] = 0
+airline_carrier_delay_time$high_carrier[is.na(airline_carrier_delay_time$high_carrier)] = "either"
+airline_carrier_delay_time$low_carrier[is.na(airline_carrier_delay_time$low_carrier)] = "either"
 ```
+
 
 
 ### Core Network
@@ -199,39 +206,57 @@ airline_network = graph_from_data_frame(airline,directed = TRUE)
 ### Insert attributes into core network
 ```{r}
 V(airline_network)$volume = airport_volume$volume_in_out
+V(airline_network)$volume = round(V(airline_network)$volume,2)
 V(airline_network)$city = airport_city$city_name
 V(airline_network)$state = airport_state$state_name
 V(airline_network)$delay_rate = Dep_Delay_Rate$frequency
+V(airline_network)$delayrate = round(V(airline_network)$delayrate,4)
 V(airline_network)$avg_delay_time = Dep_Delay_Time$avg_delay_time
+V(airline_network)$avgdelaytime = round(V(airline_network)$avgdelaytime,1)
 V(airline_network)$latitude = geo_airport$latitude
 V(airline_network)$longitude = geo_airport$longitude
 V(airline_network)$lat = geo_airport$latitude
 V(airline_network)$lng = geo_airport$longitude
 V(airline_network)$delay_carrier_high = airport_carrier_delay$high_carrier
 V(airline_network)$delay_carrier_high_rate = airport_carrier_delay$high_rate
+V(airline_network)$delaycarrierhighrate = round(V(airline_network)$delaycarrierhighrate,4)
 V(airline_network)$delay_carrier_low = airport_carrier_delay$low_carrier
 V(airline_network)$delay_carrier_low_rate = airport_carrier_delay$low_rate
+V(airline_network)$delaycarrierlowrate = round(V(airline_network)$delaycarrierlowrate,4)
+V(airline_network)$closeness = round(as.vector(closeness(airline_network,normalized = TRUE)),4)
+V(airline_network)$betweenness = round(as.vector(betweenness(airline_network,normalized = TRUE)),4)
 E(airline_network)$distance = Mean_Distance$mean_distance
+E(airline_network)$distance = round(E(airline_network)$distance,0)
 E(airline_network)$daily_frequency = Airline_Frequency$daily_frequency
+E(airline_network)$dailyfrequency = round(E(airline_network)$dailyfrequency,1)
 E(airline_network)$deley_rate = Airline_delay_rate$rate
+E(airline_network)$deleyrate = round(E(airline_network)$deleyrate,4)
 E(airline_network)$airline_avg_delay_time = Airline_delay_average_time$delay
+E(airline_network)$airlineavgdelaytime = round(E(airline_network)$airlineavgdelaytime,1)
 E(airline_network)$linedelay_ca_high = airline_carrier_delay$high_carrier
 E(airline_network)$linedelay_ca_high_rate = airline_carrier_delay$high_rate
+E(airline_network)$linedelaycahighrate = round(E(airline_network)$linedelaycahighrate,4)
 E(airline_network)$linedelay_ca_low = airline_carrier_delay$low_carrier
 E(airline_network)$linedelay_ca_low_rate = airline_carrier_delay$low_rate
+E(airline_network)$linedelaycalowrate = round(E(airline_network)$linedelaycalowrate,4)
 
-E(airline_network)$linedelaytime_ca_high = airline_carrier_delay_time$high_carrier
-E(airline_network)$linedelaytime_ca_high_time = airline_carrier_delay_time$high_time
-E(airline_network)$linedelaytime_ca_low = airline_carrier_delay_time$low_carrier
-E(airline_network)$linedelaytime_ca_low_time = airline_carrier_delay_time$low_time
+E(airline_network)$linedelaytimecahigh = airline_carrier_delay_time$high_carrier
+E(airline_network)$linedelaytimecahightime = airline_carrier_delay_time$high_time
+E(airline_network)$linedelaytimecahightime = round(E(airline_network)$linedelaytimecahightime,1)
+E(airline_network)$linedelaytimecalow = airline_carrier_delay_time$low_carrier
+E(airline_network)$linedelaytimecalowtime = airline_carrier_delay_time$low_time
+E(airline_network)$linedelaytimecalowtime = round(E(airline_network)$linedelaytimecalowtime,1)
 ```
 
 ### Save as GML file
 ```{r}
 write_graph(airline_network,"airline_network.gml","gml")
 airline_network = read_graph("airline_network.gml","gml")
-
+E(airline_network)$linedelaytimecahigh
 ```
+
+
+
 ```{r}
 write.csv(airport_volume,"list.csv")
 
@@ -239,12 +264,68 @@ write.csv(airport_volume,"list.csv")
 
 ### Hub analysis
 ```{r}
+#top 10 airport degree
+Airport_degree = Dep_Delay_Rate
+Airport_degree = Airport_degree %>% rename(degree = frequency)
+Airport_degree$degree = as.vector(degree(airline_network))
+top10degree = Airport_degree %>% top_n(10,degree) %>% arrange(desc(degree))
+ggplot(top10degree , aes(x = reorder(airport,-degree),y = degree))+
+  geom_col(fill = "steelblue")+
+  geom_label(aes(label = degree))+
+  labs(x = "Airport", y = "Degree", title = "Top 10 Degree Airport")
+
+#top 10 airport volume
+top10volume = airport_volume %>% top_n(10,volume_in_out) %>% arrange(desc(volume_in_out))
+ggplot(top10volume , aes(x = reorder(airport,-volume_in_out),y = volume_in_out))+
+  geom_col(fill = "steelblue")+
+  geom_label(aes(label = round(volume_in_out,2)))+
+  labs(x = "Airport", y = "Volume", title = "Top 10 Volume Airport")
+
+#plot the segmented degree distribution
+plot(table(degree(airline_network)),main = "degree distribution",xlab = "degree",ylab = "frequency")
+
+plot(table(betweenness(airline_network,normalized = TRUE)))
+closeness(airline_network)
+
+average.path.length(airline_network)
+
+plot(table(V(airline_network)$volume),main = "volume distribution")
+
+degree(airline_network)
+V(airline_network)[which.max(degree(airline_network))]$name
+which(V(airline_network)$name == "SFO")
+V(airline_network)[which.min(degree(airline_network))]$name
+plot(table(degree(airline_network)))
+logistic_reg = glm(V(airline_network)$volume ~ degree(airline_network), family = 'gaussian')
+summary(logistic_reg)
+edge_connectivity(airline_network,target = 37,source = 236)
+
+```
+```{r}
+fragile_network = airline_network
+V(fragile_network)[-21]
+```
+
+
+
+```{r}
+d
+
+
+
 t = table(degree(airline_network))
 plot(t)
-
+neighborhood(airline_network,1,nodes = "ATL",mode = "out")
+neighborhood.size(airline_network,1,nodes = "ATL",mode = "out")
+s = optimal.community(airline_network)
+cliques(airline_network)
+hub.score(airline_network)
+summary(airline_network)
+plot(closeness(airline_network, vids = V(airline_network)$name, mode = "all"))
+betweenness(airline_network, v = V(airline_network)$name, directed = TRUE,normalized = TRUE)
+transitivity(airline_network)
+assortativity.degree(airline_network)
+assortativity.nominal(airline_network,types = V(airline_network)$avgdelaytime)
 ```
-### delay analysis
-```{r}
 
-```
 
